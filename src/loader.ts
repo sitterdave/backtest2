@@ -1,16 +1,14 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Market } from "./types";
+import { loadMarketsFromCsvFolders } from "./csv-loader";
 
 /**
- * Load market data from a JSON file.
+ * Auto-detect data format and load markets.
  *
- * Accepts either:
- *  - A single JSON file containing an array of Market objects
- *  - A directory path, in which case all .json files are loaded and merged
- *
- * The loader performs basic validation but does NOT transform or filter data.
- * That is the strategy's job.
+ * Supports:
+ *  1. JSON file or directory of JSON files
+ *  2. CSV folder structure: market_Self/26_02_07_07_30_07_45/BTC.csv etc.
  */
 export function loadMarkets(inputPath: string): Market[] {
   const resolved = path.resolve(inputPath);
@@ -21,14 +19,38 @@ export function loadMarkets(inputPath: string): Market[] {
 
   const stat = fs.statSync(resolved);
 
-  if (stat.isDirectory()) {
-    return loadFromDirectory(resolved);
-  } else {
-    return loadFromFile(resolved);
+  if (stat.isFile() && resolved.endsWith(".json")) {
+    return loadFromJsonFile(resolved);
   }
+
+  if (stat.isDirectory()) {
+    // Auto-detect: does it contain CSV files or JSON files?
+    if (containsCSV(resolved)) {
+      return loadMarketsFromCsvFolders(resolved);
+    }
+
+    // Check if subdirectories contain CSV files (base folder like market_Self/)
+    const entries = fs.readdirSync(resolved);
+    const hasSubdirsWithCSV = entries.some((e) => {
+      const full = path.join(resolved, e);
+      return fs.statSync(full).isDirectory() && containsCSV(full);
+    });
+    if (hasSubdirsWithCSV) {
+      return loadMarketsFromCsvFolders(resolved);
+    }
+
+    // Fall back to JSON directory
+    return loadFromJsonDirectory(resolved);
+  }
+
+  throw new Error(`Unsupported file type: ${resolved}`);
 }
 
-function loadFromFile(filePath: string): Market[] {
+function containsCSV(dirPath: string): boolean {
+  return fs.readdirSync(dirPath).some((f) => f.endsWith(".csv"));
+}
+
+function loadFromJsonFile(filePath: string): Market[] {
   const raw = fs.readFileSync(filePath, "utf-8");
   const data = JSON.parse(raw);
 
@@ -36,7 +58,6 @@ function loadFromFile(filePath: string): Market[] {
     return validateMarkets(data, filePath);
   }
 
-  // Maybe it's a single market object
   if (data && typeof data === "object" && data.asset) {
     return validateMarkets([data], filePath);
   }
@@ -46,24 +67,24 @@ function loadFromFile(filePath: string): Market[] {
   );
 }
 
-function loadFromDirectory(dirPath: string): Market[] {
+function loadFromJsonDirectory(dirPath: string): Market[] {
   const files = fs
     .readdirSync(dirPath)
     .filter((f) => f.endsWith(".json"))
     .sort();
 
   if (files.length === 0) {
-    throw new Error(`No .json files found in directory: ${dirPath}`);
+    throw new Error(`No .json or .csv files found in directory: ${dirPath}`);
   }
 
   const allMarkets: Market[] = [];
   for (const file of files) {
-    const markets = loadFromFile(path.join(dirPath, file));
+    const markets = loadFromJsonFile(path.join(dirPath, file));
     allMarkets.push(...markets);
   }
 
   console.log(
-    `Loaded ${allMarkets.length} markets from ${files.length} files in ${dirPath}`
+    `Loaded ${allMarkets.length} markets from ${files.length} JSON files in ${dirPath}`
   );
   return allMarkets;
 }
