@@ -7,12 +7,16 @@
     "build": "tsc",
     "start": "ts-node src/index.ts",
     "backtest": "ts-node src/index.ts",
-    "selftest": "ts-node src/selftest.ts"
+    "selftest": "ts-node src/selftest.ts",
+    "ui": "ts-node src/server.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@types/express": "^5.0.6",
+    "express": "^5.2.1"
+  },
   "devDependencies": {
-    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0",
     "ts-node": "^10.9.0",
-    "@types/node": "^20.0.0"
+    "typescript": "^5.3.0"
   }
 }

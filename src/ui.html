@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Correlation Gap Backtester</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e4e4e7;
+    --muted: #8b8d98;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --orange: #f97316;
+    --blue: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  header .subtitle { color: var(--muted); font-size: 14px; }
+  .logo { font-size: 28px; }
+
+  /* Config Panel */
+  .config-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .config-panel h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .field input, .field select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field .hint { font-size: 11px; color: var(--muted); }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-secondary:hover { color: var(--text); border-color: var(--muted); }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Error */
+  .error-banner {
+    background: rgba(239,68,68,0.1);
+    border: 1px solid var(--red);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--red);
+    font-size: 14px;
+    margin-bottom: 20px;
+    display: none;
+  }
+
+  /* Results */
+  #results { display: none; }
+
+  /* Stats Grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .stat-card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-card .value { font-size: 24px; font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
+  .stat-card .value.positive { color: var(--green); }
+  .stat-card .value.negative { color: var(--red); }
+  .stat-card .value.neutral { color: var(--text); }
+
+  /* Charts */
+  .charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+  .chart-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+  .chart-card canvas { max-height: 280px; }
+
+  /* PnL Breakdown */
+  .pnl-bar {
+    display: flex;
+    height: 32px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .pnl-bar .segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+    min-width: 40px;
+    transition: width 0.3s;
+  }
+
+  /* Trade Table */
+  .table-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .table-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 16px 20px 12px;
+  }
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.03);
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    white-space: nowrap;
+  }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-yes { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-no { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-early { background: rgba(99,102,241,0.15); color: var(--accent-hover); }
+  .badge-hold { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .badge-maxhold { background: rgba(249,115,22,0.15); color: var(--orange); }
+  .badge-stoploss { background: rgba(239,68,68,0.15); color: var(--red); }
+
+  /* Skip Table */
+  .skip-count { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 8px; }
+
+  /* Section titles */
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+
+  /* Config group titles */
+  .group-title {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-hover);
+    margin-top: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .group-title:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo">&#x1F4CA;</div>
+    <div>
+      <h1>Correlation Gap Backtester</h1>
+      <div class="subtitle">Prediction Market Strategy Simulator</div>
+    </div>
+  </header>
+
+  <div class="error-banner" id="error"></div>
+
+  <!-- Config Panel -->
+  <div class="config-panel">
+    <h2>Configuration</h2>
+    <div class="config-grid">
+      <div class="group-title">Data</div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label>Data Path</label>
+        <select id="dataPath">
+          <option value="">Loading...</option>
+        </select>
+        <div class="hint">Relative to /data folder, or enter absolute path</div>
+      </div>
+
+      <div class="group-title">Strategy</div>
+      <div class="field">
+        <label>Min Gap</label>
+        <input type="number" id="minGap" step="0.01" value="0.20">
+        <div class="hint">Trigger threshold</div>
+      </div>
+      <div class="field">
+        <label>Exit Gap</label>
+        <input type="number" id="exitGap" step="0.01" value="0.05">
+        <div class="hint">Close threshold</div>
+      </div>
+      <div class="field">
+        <label>Check Start</label>
+        <input type="number" id="checkStart" step="0.05" value="0.15">
+        <div class="hint">Scan from (% of event)</div>
+      </div>
+      <div class="field">
+        <label>Check End</label>
+        <input type="number" id="checkEnd" step="0.05" value="0.55">
+        <div class="hint">Scan until (% of event)</div>
+      </div>
+      <div class="field">
+        <label>Stake Size ($)</label>
+        <input type="number" id="stakeSize" step="1" value="10">
+      </div>
+
+      <div class="group-title">Fees &amp; Slippage</div>
+      <div class="field">
+        <label>Fee %</label>
+        <input type="number" id="feePct" step="0.005" value="0">
+        <div class="hint">Per transaction (0.02 = 2%)</div>
+      </div>
+      <div class="field">
+        <label>Slippage %</label>
+        <input type="number" id="slippagePct" step="0.005" value="0">
+        <div class="hint">Estimated per trade</div>
+      </div>
+
+      <div class="group-title">Safety Rails</div>
+      <div class="field">
+        <label>Max Hold (ms)</label>
+        <input type="number" id="maxHoldMs" step="60000" value="0">
+        <div class="hint">0 = disabled. 420000 = 7min</div>
+      </div>
+      <div class="field">
+        <label>Stop Loss Gap</label>
+        <input type="number" id="stopLossGap" step="0.05" value="0">
+        <div class="hint">Exit if gap widens beyond</div>
+      </div>
+      <div class="field">
+        <label>Min Depth ($)</label>
+        <input type="number" id="minDepth" step="1" value="0">
+        <div class="hint">Skip if depth &lt; this</div>
+      </div>
+      <div class="field">
+        <label>Max Spread</label>
+        <input type="number" id="maxSpread" step="0.01" value="0">
+        <div class="hint">Skip if spread &gt; this</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" id="runBtn" onclick="runBacktest()">
+        <span class="spinner" id="spinner"></span>
+        Run Backtest
+      </button>
+      <button class="btn btn-secondary" onclick="resetConfig()">Reset Defaults</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    <!-- Stats -->
+    <div class="stats-grid" id="statsGrid"></div>
+
+    <!-- PnL Breakdown Bar -->
+    <div class="section-title">PnL Breakdown</div>
+    <div class="pnl-bar" id="pnlBar"></div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Cumulative PnL</h3>
+        <canvas id="chartPnl"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Exit Types</h3>
+        <canvas id="chartExits"></canvas>
+      </div>
+    </div>
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>PnL per Asset</h3>
+        <canvas id="chartAssets"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Entry Gap Distribution</h3>
+        <canvas id="chartGaps"></canvas>
+      </div>
+    </div>
+
+    <!-- Trade Table -->
+    <div class="table-card">
+      <h3>Trades <span class="skip-count" id="tradeCount"></span></h3>
+      <div class="table-wrap">
+        <table id="tradesTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Asset</th>
+              <th>Side</th>
+              <th>Entry</th>
+              <th>Entry Time</th>
+              <th>Gap</th>
+              <th>Exit</th>
+              <th>Exit Type</th>
+              <th>Exit Time</th>
+              <th>Gross</th>
+              <th>Fees</th>
+              <th>Slip</th>
+              <th>Net PnL</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Skips Table -->
+    <div class="table-card" id="skipsCard" style="display:none;">
+      <h3>Skipped Trades <span class="skip-count" id="skipCount"></span></h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Asset</th><th>Time</th><th>Reason</th></tr>
+          </thead>
+          <tbody id="skipsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Chart.js dark theme defaults
+Chart.defaults.color = '#8b8d98';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+
+let charts = {};
+let defaultConfig = {};
+
+// Init
+(async () => {
+  try {
+    const [cfgRes, pathsRes] = await Promise.all([
+      fetch('/api/config'),
+      fetch('/api/data-paths'),
+    ]);
+    defaultConfig = await cfgRes.json();
+    const { paths } = await pathsRes.json();
+
+    const sel = document.getElementById('dataPath');
+    sel.innerHTML = '';
+    if (paths.length === 0) {
+      sel.innerHTML = '<option value="">No data found in /data</option>';
+    } else {
+      for (const p of paths) {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        sel.appendChild(opt);
+      }
+    }
+    applyConfig(defaultConfig);
+  } catch (e) {
+    showError('Failed to load config: ' + e.message);
+  }
+})();
+
+function applyConfig(cfg) {
+  for (const [key, val] of Object.entries(cfg)) {
+    const el = document.getElementById(key);
+    if (el) el.value = val;
+  }
+}
+
+function resetConfig() {
+  applyConfig(defaultConfig);
+}
+
+function getConfig() {
+  const fields = ['minGap','exitGap','checkStart','checkEnd','stakeSize',
+                   'feePct','slippagePct','maxHoldMs','stopLossGap','minDepth','maxSpread'];
+  const cfg = {};
+  for (const f of fields) {
+    cfg[f] = parseFloat(document.getElementById(f).value) || 0;
+  }
+  return cfg;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 8000);
+}
+
+async function runBacktest() {
+  const btn = document.getElementById('runBtn');
+  const spinner = document.getElementById('spinner');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  document.getElementById('error').style.display = 'none';
+
+  try {
+    const dataPath = document.getElementById('dataPath').value;
+    if (!dataPath) throw new Error('Select a data path');
+
+    const resp = await fetch('/api/backtest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataPath, config: getConfig() }),
+    });
+
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Backtest failed');
+
+    renderResults(data);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+function renderResults(data) {
+  const { result, config } = data;
+  document.getElementById('results').style.display = 'block';
+
+  // Stats
+  renderStats(result, config);
+  renderPnlBar(result);
+  renderCharts(result);
+  renderTradeTable(result);
+  renderSkipsTable(result);
+}
+
+function renderStats(r, cfg) {
+  const grid = document.getElementById('statsGrid');
+  const pnlClass = r.totalPnl > 0 ? 'positive' : r.totalPnl < 0 ? 'negative' : 'neutral';
+  const grossClass = r.totalGrossPnl > 0 ? 'positive' : r.totalGrossPnl < 0 ? 'negative' : 'neutral';
+
+  grid.innerHTML = `
+    <div class="stat-card">
+      <div class="label">Total Trades</div>
+      <div class="value neutral">${r.totalTrades}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Win Rate</div>
+      <div class="value ${r.winRate >= 0.5 ? 'positive' : 'negative'}">${(r.winRate*100).toFixed(1)}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Gross PnL</div>
+      <div class="value ${grossClass}">$${r.totalGrossPnl.toFixed(2)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Net PnL</div>
+      <div class="value ${pnlClass}">$${r.totalPnl.toFixed(2)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg PnL / Trade</div>
+      <div class="value ${r.avgPnlPerTrade >= 0 ? 'positive' : 'negative'}">$${r.avgPnlPerTrade.toFixed(2)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Convergence</div>
+      <div class="value neutral">${(r.convergenceRate*100).toFixed(1)}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Fees</div>
+      <div class="value negative">-$${r.totalFees.toFixed(2)}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Slippage</div>
+      <div class="value negative">-$${r.totalSlippage.toFixed(2)}</div>
+    </div>
+  `;
+}
+
+function renderPnlBar(r) {
+  const bar = document.getElementById('pnlBar');
+  if (r.totalTrades === 0) { bar.innerHTML = ''; return; }
+
+  const gross = Math.abs(r.totalGrossPnl);
+  const fees = r.totalFees;
+  const slip = r.totalSlippage;
+  const total = gross + fees + slip || 1;
+
+  bar.innerHTML = `
+    <div class="segment" style="width:${(gross/total*100).toFixed(1)}%;background:${r.totalGrossPnl>=0?'var(--green)':'var(--red)'}">
+      Gross $${r.totalGrossPnl.toFixed(2)}
+    </div>
+    ${fees > 0 ? `<div class="segment" style="width:${(fees/total*100).toFixed(1)}%;background:var(--orange)">Fees -$${fees.toFixed(2)}</div>` : ''}
+    ${slip > 0 ? `<div class="segment" style="width:${(slip/total*100).toFixed(1)}%;background:var(--yellow)">Slip -$${slip.toFixed(2)}</div>` : ''}
+  `;
+}
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+function renderCharts(r) {
+  // Cumulative PnL
+  destroyChart('pnl');
+  const cumPnl = [];
+  let running = 0;
+  for (const t of r.trades) { running += t.pnl; cumPnl.push(running); }
+  charts.pnl = new Chart(document.getElementById('chartPnl'), {
+    type: 'line',
+    data: {
+      labels: cumPnl.map((_,i) => `#${i+1}`),
+      datasets: [{
+        label: 'Cumulative Net PnL',
+        data: cumPnl,
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: cumPnl.length > 50 ? 0 : 3,
+      }],
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } },
+  });
+
+  // Exit Types Doughnut
+  destroyChart('exits');
+  const exitData = [r.earlyExitCount, r.holdToResolutionCount, r.maxHoldExitCount, r.stopLossExitCount];
+  const exitLabels = ['Early Exit', 'Hold to Resolution', 'Max Hold', 'Stop Loss'];
+  const exitColors = ['#6366f1', '#eab308', '#f97316', '#ef4444'];
+  // Filter out zeros
+  const filteredExits = exitLabels.map((l,i) => ({ l, v: exitData[i], c: exitColors[i] })).filter(e => e.v > 0);
+  charts.exits = new Chart(document.getElementById('chartExits'), {
+    type: 'doughnut',
+    data: {
+      labels: filteredExits.map(e => e.l),
+      datasets: [{ data: filteredExits.map(e => e.v), backgroundColor: filteredExits.map(e => e.c), borderWidth: 0 }],
+    },
+    options: { responsive: true, cutout: '60%' },
+  });
+
+  // Per-Asset PnL Bar
+  destroyChart('assets');
+  const assets = [...new Set(r.trades.map(t => t.asset))];
+  const assetGross = assets.map(a => r.trades.filter(t => t.asset === a).reduce((s,t) => s + t.grossPnl, 0));
+  const assetNet = assets.map(a => r.trades.filter(t => t.asset === a).reduce((s,t) => s + t.pnl, 0));
+  charts.assets = new Chart(document.getElementById('chartAssets'), {
+    type: 'bar',
+    data: {
+      labels: assets,
+      datasets: [
+        { label: 'Gross PnL', data: assetGross, backgroundColor: 'rgba(99,102,241,0.7)' },
+        { label: 'Net PnL', data: assetNet, backgroundColor: 'rgba(34,197,94,0.7)' },
+      ],
+    },
+    options: { responsive: true },
+  });
+
+  // Gap Distribution Histogram
+  destroyChart('gaps');
+  const gaps = r.trades.map(t => t.gapAtEntry);
+  if (gaps.length > 0) {
+    const minG = Math.floor(Math.min(...gaps) * 100) / 100;
+    const maxG = Math.ceil(Math.max(...gaps) * 100) / 100;
+    const bucketSize = 0.02;
+    const buckets = [];
+    const bucketLabels = [];
+    for (let g = minG; g <= maxG + bucketSize; g += bucketSize) {
+      bucketLabels.push(g.toFixed(2));
+      buckets.push(gaps.filter(v => v >= g && v < g + bucketSize).length);
+    }
+    charts.gaps = new Chart(document.getElementById('chartGaps'), {
+      type: 'bar',
+      data: {
+        labels: bucketLabels,
+        datasets: [{ label: 'Count', data: buckets, backgroundColor: 'rgba(59,130,246,0.6)', borderRadius: 3 }],
+      },
+      options: { responsive: true, plugins: { legend: { display: false } } },
+    });
+  }
+}
+
+function renderTradeTable(r) {
+  document.getElementById('tradeCount').textContent = `(${r.totalTrades})`;
+  const tbody = document.getElementById('tradesBody');
+  tbody.innerHTML = '';
+
+  for (let i = 0; i < r.trades.length; i++) {
+    const t = r.trades[i];
+    const pnlClass = t.pnl > 0 ? 'positive' : t.pnl < 0 ? 'negative' : '';
+    const sideBadge = t.side === 'YES' ? 'badge-yes' : 'badge-no';
+    const exitBadge = {
+      'EARLY_EXIT': 'badge-early',
+      'HOLD_TO_RESOLUTION': 'badge-hold',
+      'MAX_HOLD': 'badge-maxhold',
+      'STOP_LOSS': 'badge-stoploss',
+    }[t.exitType] || '';
+
+    const entryTime = new Date(t.entryTimestamp).toLocaleTimeString();
+    const exitTime = new Date(t.exitTimestamp).toLocaleTimeString();
+
+    tbody.innerHTML += `<tr>
+      <td>${i+1}</td>
+      <td><strong>${t.asset}</strong></td>
+      <td><span class="badge ${sideBadge}">${t.side}</span></td>
+      <td>${t.entryPrice.toFixed(3)}</td>
+      <td>${entryTime}</td>
+      <td>${t.gapAtEntry.toFixed(3)}</td>
+      <td>${t.exitPrice.toFixed(3)}</td>
+      <td><span class="badge ${exitBadge}">${t.exitType.replace(/_/g,' ')}</span></td>
+      <td>${exitTime}</td>
+      <td>$${t.grossPnl.toFixed(2)}</td>
+      <td style="color:var(--orange)">-$${t.fees.toFixed(2)}</td>
+      <td style="color:var(--yellow)">-$${t.slippage.toFixed(2)}</td>
+      <td class="${pnlClass}" style="font-weight:600">$${t.pnl.toFixed(2)}</td>
+    </tr>`;
+  }
+}
+
+function renderSkipsTable(r) {
+  const card = document.getElementById('skipsCard');
+  if (!r.skips || r.skips.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('skipCount').textContent = `(${r.skips.length})`;
+  const tbody = document.getElementById('skipsBody');
+  tbody.innerHTML = '';
+  for (const s of r.skips) {
+    const time = new Date(s.timestamp).toLocaleTimeString();
+    tbody.innerHTML += `<tr>
+      <td><strong>${s.pair.altAsset}</strong></td>
+      <td>${time}</td>
+      <td style="color:var(--muted)">${s.reason}</td>
+    </tr>`;
+  }
+}
+</script>
+</body>
+</html>
